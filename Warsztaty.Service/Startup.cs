@@ -7,6 +7,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using RawRabbit;
+using RawRabbit.vNext;
+using warsztaty.messages.Commands;
+using Warsztaty.Service.Framework;
+using Warsztaty.Service.Handlers;
 
 namespace Warsztaty.Service
 {
@@ -29,6 +34,8 @@ namespace Warsztaty.Service
         {
             // Add framework services.
             services.AddMvc();
+	        ConfigureRabitMq(services);
+
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -36,8 +43,27 @@ namespace Warsztaty.Service
         {
             loggerFactory.AddConsole(Configuration.GetSection("Logging"));
             loggerFactory.AddDebug();
+			ConfigureHandlers(app);
 
             app.UseMvc();
         }
-    }
+
+	    private void ConfigureRabitMq(IServiceCollection services)
+	    {
+		    var options = new RabbitMqOptions();
+		    var section = Configuration.GetSection("rabbitmq");
+		    section.Bind(options);
+		    services.Configure<RabbitMqOptions>(section);
+		    var client = BusClientFactory.CreateDefault(options);
+		    services.AddSingleton<IBusClient>(client);
+		    services.AddScoped<ICommandHandler<CreateRecord>, CreateRecordHandler>();
+	    }
+
+	    private void ConfigureHandlers(IApplicationBuilder app)
+	    {
+		    var client = app.ApplicationServices.GetService<IBusClient>();
+		    client.SubscribeAsync<CreateRecord>((msg, ctx) => app.ApplicationServices
+			    .GetService<ICommandHandler<CreateRecord>>().HandleAsync(msg));
+	    }
+	}
 }
