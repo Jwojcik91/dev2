@@ -5,7 +5,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RawRabbit;
 using RawRabbit.vNext;
+using warsztaty.messages.Commands;
+using warsztaty.messages.Events;
 using Warsztaty.API.Framework;
+using Warsztaty.API.Handlers;
+using Warsztaty.API.Storage;
 
 namespace Warsztaty.API
 {
@@ -29,6 +33,7 @@ namespace Warsztaty.API
             // Add framework services.
             services.AddMvc();
 	        ConfigureRabitMq(services);
+	        ConfigureDatabase(services);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -36,8 +41,9 @@ namespace Warsztaty.API
         {
             loggerFactory.AddConsole(Configuration.GetSection("Logging"));
             loggerFactory.AddDebug();
+	        ConfigureHandlers(app);
 
-            app.UseMvc();
+			app.UseMvc();
         }
 
 	    private void ConfigureRabitMq(IServiceCollection services)
@@ -48,6 +54,26 @@ namespace Warsztaty.API
 			services.Configure<RabbitMqOptions>(section);
 		    var client = BusClientFactory.CreateDefault(options);
 		    services.AddSingleton<IBusClient>(client);
+			services.AddScoped<IEventHandler<RecordCreated>, RecordCreatedHandler>();
+		    services.AddScoped<IEventHandler<CreateRecordFailed>, RecordCreateFailedHander>();
+		}
+
+	    private void ConfigureHandlers(IApplicationBuilder app)
+	    {
+		    var client = app.ApplicationServices.GetService<IBusClient>();
+		    client.SubscribeAsync<CreateRecord>((msg, ctx) => app.ApplicationServices
+			    .GetService<ICommandHandler<CreateRecord>>().HandleAsync(msg));
+
+		    client.SubscribeAsync<RecordCreated>((msg, ctx) => app.ApplicationServices
+			    .GetService<IEventHandler<RecordCreated>>().HandleAsync(msg));
+
+			client.SubscribeAsync<CreateRecordFailed>((msg, ctx) => app.ApplicationServices
+				.GetService<IEventHandler<CreateRecordFailed>>().HandleAsync(msg));
+		}
+
+	    private void ConfigureDatabase(IServiceCollection services)
+	    {
+		    services.AddSingleton<IStorage>(new InMemoryDb());
 	    }
-    }
+	}
 }
